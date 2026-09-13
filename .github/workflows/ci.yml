@@ -21,7 +21,9 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Type-check web application
+        run: npm run typecheck -w apps/web
       - name: Build web and API
         run: npm run build
-      - name: Run API smoke tests
+      - name: Run functional and regression QA
         run: npm test
