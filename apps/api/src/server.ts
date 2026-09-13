@@ -16,8 +16,96 @@ app.use(express.json({ limit: '2mb' }));
 
 const spendPct = (p: (typeof projects)[number]) => Math.round(p.expenditure / p.budget * 100);
 const divergence = (p: (typeof projects)[number]) => spendPct(p) - p.physicalProgress;
+const allowedModels = new Set(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']);
 
-app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.3.0' }));
+function getOpenAIKey(req: express.Request) {
+  const headerKey = String(req.header('x-openai-api-key') || '').trim();
+  return headerKey || String(process.env.OPENAI_API_KEY || '').trim();
+}
+
+function openAIText(payload: any): string {
+  if (typeof payload?.output_text === 'string' && payload.output_text.trim()) return payload.output_text.trim();
+  const pieces: string[] = [];
+  for (const item of payload?.output ?? []) {
+    for (const content of item?.content ?? []) {
+      if (typeof content?.text === 'string') pieces.push(content.text);
+    }
+  }
+  return pieces.join('\n').trim();
+}
+
+function groundedContext(projectId?: string) {
+  const selected = projectId ? projects.find(p => p.id === projectId) : undefined;
+  const list = selected ? [selected] : projects;
+  return list.map(p => ({
+    id: p.id,
+    name: p.name,
+    province: p.province,
+    municipality: p.municipality,
+    contractor: p.contractor,
+    programme: p.programme,
+    status: p.status,
+    healthScore: p.healthScore,
+    confidence: p.confidence,
+    budget: p.budget,
+    expenditure: p.expenditure,
+    expenditurePct: spendPct(p),
+    physicalProgress: p.physicalProgress,
+    plannedProgress: p.plannedProgress,
+    divergence: divergence(p),
+    unitsPlanned: p.unitsPlanned,
+    unitsCompleted: p.unitsCompleted,
+    overdueMilestones: p.overdueMilestones,
+    openRisks: p.openRisks,
+    evidenceAgeDays: p.evidenceAgeDays,
+    forecastCompletion: p.forecastCompletion,
+    primaryBlocker: p.primaryBlocker,
+    trend: p.trend,
+    rootCauses: p.rootCauses,
+    recoveryActions: p.recoveryActions
+  }));
+}
+
+async function callOpenAI(opts: { key: string; model: string; question: string; projectId?: string }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${opts.key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        store: false,
+        max_output_tokens: 600,
+        instructions: [
+          'You are HomeFlow AI, a responsible AI delivery-assurance copilot for South African Human Settlements.',
+          'Answer only from the supplied HomeFlow project data. Do not invent facts, legal findings, procurement findings or official determinations.',
+          'Keep answers concise, operational and suitable to be spoken aloud. State uncertainty where appropriate.',
+          'For potentially stalled projects, contractor performance, financial anomalies and recovery recommendations, clearly say that accountable human review is required.',
+          'Never claim a project is legally non-compliant, corrupt, fraudulent or contractually in default unless that exact determination exists in the supplied data.',
+          'When useful, cite project IDs in the answer.'
+        ].join(' '),
+        input: `User question: ${opts.question}\n\nCurrent HomeFlow data:\n${JSON.stringify(groundedContext(opts.projectId))}`
+      }),
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data?.error?.message || `OpenAI request failed with HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    const answer = openAIText(data);
+    if (!answer) throw new Error('OpenAI returned no text response.');
+    return { answer, responseId: data?.id ?? null };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.4.0', openAIConfigured: Boolean(process.env.OPENAI_API_KEY) }));
 app.get('/api/projects', (req,res) => {
   const status = String(req.query.status || '');
   const province = String(req.query.province || '');
@@ -109,12 +197,53 @@ app.get('/api/what-changed/:id', (req,res) => {
 
 app.get('/api/audit', (_req,res) => res.json(auditLog));
 app.get('/api/executive-brief', (_req,res) => res.json(executiveBrief()));
+app.get('/api/openai/status', (_req,res) => res.json({ serverKeyConfigured: Boolean(process.env.OPENAI_API_KEY), defaultModel: 'gpt-5.6-luna', allowedModels: [...allowedModels] }));
 
-const askSchema = z.object({ question: z.string().min(2).max(1000), projectId: z.string().optional() });
-app.post('/api/ai/copilot', (req,res) => {
+const openAITestSchema = z.object({ model: z.string().optional() });
+app.post('/api/openai/test', async (req,res) => {
+  const parsed = openAITestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid test request' });
+  const key = getOpenAIKey(req);
+  if (!key) return res.status(400).json({ error: 'No OpenAI API key supplied.' });
+  const model = allowedModels.has(parsed.data.model || '') ? String(parsed.data.model) : 'gpt-5.6-luna';
+  try {
+    const result = await callOpenAI({ key, model, question: 'Reply exactly: HomeFlow OpenAI connection successful.' });
+    res.json({ ok: true, model, message: result.answer, responseId: result.responseId });
+  } catch (error:any) {
+    res.status(502).json({ error: error?.message || 'OpenAI connection test failed.' });
+  }
+});
+
+const askSchema = z.object({ question: z.string().min(2).max(1000), projectId: z.string().optional(), model: z.string().optional() });
+app.post('/api/ai/copilot', async (req,res) => {
   const parsed = askSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid request' });
-  res.json({ ...groundedAnswer(parsed.data.question, parsed.data.projectId), humanReviewRequired: true, generatedAt: new Date().toISOString() });
+  const key = getOpenAIKey(req);
+  const model = allowedModels.has(parsed.data.model || '') ? String(parsed.data.model) : 'gpt-5.6-luna';
+  if (key) {
+    try {
+      const result = await callOpenAI({ key, model, question: parsed.data.question, projectId: parsed.data.projectId });
+      return res.json({
+        answer: result.answer,
+        provider: 'openai',
+        model,
+        responseId: result.responseId,
+        humanReviewRequired: true,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error:any) {
+      const fallback = groundedAnswer(parsed.data.question, parsed.data.projectId);
+      return res.json({
+        ...fallback,
+        provider: 'rules-fallback',
+        model: null,
+        warning: `OpenAI was unavailable: ${error?.message || 'unknown error'}`,
+        humanReviewRequired: true,
+        generatedAt: new Date().toISOString()
+      });
+    }
+  }
+  res.json({ ...groundedAnswer(parsed.data.question, parsed.data.projectId), provider: 'rules', model: null, humanReviewRequired: true, generatedAt: new Date().toISOString() });
 });
 
 const actionSchema = z.object({ action: z.string().min(2), projectId: z.string(), payload: z.record(z.any()).optional(), confirmed: z.boolean().default(false) });
