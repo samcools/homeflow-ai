@@ -106,7 +106,7 @@ async function callOpenAI(opts: { key: string; model: string; question: string; 
   }
 }
 
-app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.4.1', openAIConfigured: Boolean(process.env.OPENAI_API_KEY) }));
+app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.4.2', openAIConfigured: Boolean(process.env.OPENAI_API_KEY) }));
 app.get('/api/projects', (req,res) => {
   const status = String(req.query.status || '');
   const province = String(req.query.province || '');
@@ -268,9 +268,11 @@ const webDist = webDistCandidates.find(candidate => existsSync(candidate));
 if (webDist) {
   console.log(`Serving HomeFlow web app from ${webDist}`);
   app.use(express.static(webDist, { maxAge: '1h', index: 'index.html' }));
-  app.get('*', (req,res,next) => {
-    if (req.path.startsWith('/api/')) return next();
-    return res.sendFile(path.join(webDist, 'index.html'));
+  app.use((req,res,next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+      return res.sendFile(path.join(webDist, 'index.html'));
+    }
+    next();
   });
 } else {
   console.warn(`HomeFlow web build not found. Checked: ${webDistCandidates.join(', ')}`);
