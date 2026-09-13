@@ -1,0 +1,39 @@
+name: Build HomeFlow PowerPoint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source/generate-presentation.mjs'
+      - 'assets/branding/*.svg'
+      - '.github/workflows/build-presentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  presentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install presentation dependency
+        run: npm install --no-save pptxgenjs
+      - name: Generate editable PowerPoint
+        run: node source/generate-presentation.mjs
+      - name: Commit generated presentation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add presentations/HomeFlow_AI_by_Pyrneo_Presentation.pptx
+          if git diff --cached --quiet; then
+            echo "Presentation already current."
+            exit 0
+          fi
+          git commit -m "Generate HomeFlow AI PowerPoint"
+          git push
