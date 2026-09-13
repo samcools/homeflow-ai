@@ -1,0 +1,55 @@
+name: Unpack HomeFlow AI repository bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'upload/READY'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reassemble and verify bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat upload/chunks/* > /tmp/homeflow.b64
+          base64 --decode /tmp/homeflow.b64 > /tmp/homeflow-ai-repository.zip
+          echo "20d9515904f1deb7765d2a79466e24612fe5839c0ea11ce7a3a83f84bbd36830  /tmp/homeflow-ai-repository.zip" | sha256sum --check --status
+          mkdir -p /tmp/homeflow-unpacked
+          unzip -q /tmp/homeflow-ai-repository.zip -d /tmp/homeflow-unpacked
+
+      - name: Populate repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --delete-excluded \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'upload/' \
+            /tmp/homeflow-unpacked/ ./
+          rm -rf upload
+
+      - name: Commit extracted project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Populate HomeFlow AI project files"
+          git push
