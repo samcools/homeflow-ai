@@ -2,9 +2,9 @@
   "name": "@homeflow/api",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/server-enhanced.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/server-enhanced.js",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
