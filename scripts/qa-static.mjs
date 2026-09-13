@@ -6,15 +6,22 @@ const index = read('apps/web/index.html');
 const portal = read('apps/web/src/portal-v5.tsx');
 const views = read('apps/web/src/views.css');
 const portalCss = read('apps/web/src/portal-v5.css');
+const enhancements = read('apps/web/src/enhancements.ts');
+const enhancementsCss = read('apps/web/src/enhancements.css');
 
 assert.match(index, /src\/views\.css/, 'Professional shared view stylesheet must be loaded');
 assert.match(index, /src\/portal-v5\.tsx/, 'Current HomeFlow portal entrypoint must be active');
+assert.match(index, /src\/enhancements\.ts/, 'Reporting and risk enhancements must be active');
 
 for (const feature of [
   'CommandCentre','ProjectsView','MapView','ContractorsView','FinanceView','RisksView','RecoveryView','AuditView','UsageView',
   'Download report','Voice Agent','Executive brief','api/ai/copilot',"view==='recovery'"
 ]) {
   assert.ok(portal.includes(feature), `Missing required portal feature: ${feature}`);
+}
+
+for (const feature of ['exportExcel','exportPdf','/api/risks','ensureRiskFallback','makeXlsx']) {
+  assert.ok(enhancements.includes(feature), `Missing enhancement feature: ${feature}`);
 }
 
 for (const cls of ['.data-table','.table-row','.data-cards','.data-card','.login-page','.map-layout','.copilot','.drawer-backdrop']) {
@@ -25,6 +32,7 @@ for (const cls of ['.inline-detail','.recovery-row','.sa-map-v5','.brief-card','
   assert.ok(portalCss.includes(cls), `Missing HomeFlow v5 style: ${cls}`);
 }
 
+assert.match(enhancementsCss,/\.metric strong\{color:#fff!important/, 'KPI quantities must render white');
 assert.ok(portal.includes("user.role==='Administrator'"), 'OpenAI settings must remain administrator-gated');
 assert.ok(!/Powered by Pyrneo/i.test(portal), 'Powered by Pyrneo wording must not appear in portal UI');
 
