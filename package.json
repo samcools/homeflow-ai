@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "concurrently \"npm:dev -w apps/api\" \"npm:dev -w apps/web\"",
     "build": "node scripts/fetch-pyrneo-logo.mjs && npm run build -w apps/web && npm run build -w apps/api",
-    "test": "npm run test -w apps/api",
+    "typecheck": "npm run typecheck -w apps/web && npm run build -w apps/api",
+    "qa": "node scripts/qa-static.mjs",
+    "test": "npm run test -w apps/api && npm run qa",
     "start": "npm run start -w apps/api"
   },
   "devDependencies": {"concurrently": "^9.0.0"}
