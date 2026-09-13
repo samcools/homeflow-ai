@@ -31,9 +31,12 @@ async function get(path, token) {
   const body = await r.json().catch(() => ({}));
   return {r, body};
 }
+async function post(path, token, body={}) {
+  const r = await fetch(`${base}${path}`, {method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(body)});
+  return {r,body:await r.json().catch(()=>({}))};
+}
 async function ask(question, token) {
-  const r = await fetch(`${base}/api/ai/copilot`, {method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({question})});
-  return {r,body:await r.json()};
+  return post('/api/ai/copilot',token,{question});
 }
 
 test('HomeFlow enhanced authenticated API, RBAC, risks, Gantt, alerts and conversational copilot', async (t) => {
@@ -75,6 +78,11 @@ test('HomeFlow enhanced authenticated API, RBAC, risks, Gantt, alerts and conver
   assert.equal(recovery.r.status, 200);
   assert.ok(recovery.body.length > 0);
 
+  const greeting = await ask('Hi',admin.token);
+  assert.equal(greeting.r.status,200);
+  assert.match(greeting.body.answer,/how can i help|hello/i);
+  assert.doesNotMatch(greeting.body.answer,/high-priority risk projects/i);
+
   const about = await ask('Hi, can you tell me about this platform please?',admin.token);
   assert.equal(about.r.status,200);
   assert.match(about.body.answer,/delivery assurance platform/i);
@@ -95,6 +103,13 @@ test('HomeFlow enhanced authenticated API, RBAC, risks, Gantt, alerts and conver
   assert.equal(longQuestion.r.status,200);
   assert.ok(longQuestion.body.answer.length > 10);
 
+  const settings = await get('/api/admin/settings',admin.token);
+  assert.equal(settings.r.status,200);
+  assert.equal(settings.body.defaultModel,'gpt-5.6-luna');
+  const saved = await post('/api/admin/settings',admin.token,{alertRecipient:'samson@pyrneo.com',reportFromEmail:'HomeFlow AI <onboarding@resend.dev>'});
+  assert.equal(saved.r.status,200);
+  assert.equal(saved.body.alertRecipient,'samson@pyrneo.com');
+
   const notificationStatus = await get('/api/notifications/status',admin.token);
   assert.equal(notificationStatus.r.status,200);
   assert.equal(notificationStatus.body.recipient,'samson@pyrneo.com');
@@ -106,6 +121,8 @@ test('HomeFlow enhanced authenticated API, RBAC, risks, Gantt, alerts and conver
   assert.ok(managerRisks.body.every(r => r.province === 'Gauteng'));
   const forbidden = await get('/api/openai/status', manager.token);
   assert.equal(forbidden.r.status, 403);
+  const forbiddenSettings = await get('/api/admin/settings',manager.token);
+  assert.equal(forbiddenSettings.r.status,403);
 
   const contractor = await login('contractor@homeflow.ai');
   const contractorProjects = await get('/api/projects', contractor.token);
