@@ -1,6 +1,6 @@
 import {zipSync,strToU8} from 'fflate';
 import {jsPDF} from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import {autoTable} from 'jspdf-autotable';
 import './enhancements.css';
 
 type Row=Record<string,unknown>;
