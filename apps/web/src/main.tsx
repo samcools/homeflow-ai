@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, BarChart3, Building2, CheckCircle2, ChevronRight, CircleDollarSign, FileCheck2, Gauge, Home, MapPinned, Mic, RefreshCw, Search, ShieldCheck, Sparkles, Users, Volume2, X } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Bot, Building2, CheckCircle2, ChevronRight, CircleDollarSign, FileCheck2, Gauge, Home, KeyRound, MapPinned, Mic, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Users, Volume2, VolumeX, X } from 'lucide-react';
 import './styles.css';
 
 type Project = {
@@ -11,8 +11,9 @@ type Project = {
 };
 type Dashboard = { totalProjects:number; critical:number; atRisk:number; watch?:number; onTrack:number; completed:number; unitsPlanned:number; unitsCompleted:number; budget:number; expenditure:number; overdueMilestones:number; openRisks:number; averagePhysicalProgress?:number; highDivergenceProjects?:number };
 type View = 'command'|'projects'|'map'|'contractors'|'finance'|'risks'|'recovery'|'audit';
+type Model = 'gpt-5.6-luna'|'gpt-5.6-terra'|'gpt-5.6-sol';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080');
 const currency = (n:number) => new Intl.NumberFormat('en-ZA',{style:'currency',currency:'ZAR',maximumFractionDigits:0}).format(n);
 const statusClass = (s:string) => s.toLowerCase().replaceAll(' ','-');
 const fetchJson = async (url:string) => { const r=await fetch(url); if(!r.ok) throw new Error(String(r.status)); return r.json(); };
@@ -25,46 +26,131 @@ const navItems:Array<[View,string,any]> = [
   ['command','Command Centre',Gauge],['projects','Projects',Building2],['map','Delivery Map',MapPinned],['contractors','Contractors',Users],['finance','Finance',CircleDollarSign],['risks','Risks & Blockers',AlertTriangle],['recovery','Recovery Plans',Activity],['audit','Audit & Governance',ShieldCheck]
 ];
 
+const voiceLanguages = [
+  ['en-ZA','English (South Africa)'],['zu-ZA','isiZulu'],['xh-ZA','isiXhosa'],['st-ZA','Sesotho'],['af-ZA','Afrikaans']
+];
+
 function App(){
   const [projects,setProjects]=useState<Project[]>([]); const [dashboard,setDashboard]=useState<Dashboard|null>(null);
   const [selected,setSelected]=useState<Project|null>(null); const [panel,setPanel]=useState(false); const [query,setQuery]=useState('');
-  const [answer,setAnswer]=useState('Ask what requires attention today, why a project is at risk, or which project has the largest budget-to-progress gap.');
+  const [answer,setAnswer]=useState('Ask what requires attention today, use a voice command, or connect an OpenAI API key for generative answers.');
   const [listening,setListening]=useState(false); const [busy,setBusy]=useState(false); const [brief,setBrief]=useState<any>(null);
   const [view,setView]=useState<View>('command'); const [viewData,setViewData]=useState<any[]>([]); const [viewLoading,setViewLoading]=useState(false);
   const [changed,setChanged]=useState<any>(null); const recognitionRef=useRef<any>(null);
+  const [settingsOpen,setSettingsOpen]=useState(false);
+  const [apiKey,setApiKey]=useState(()=>sessionStorage.getItem('homeflow_openai_key') || '');
+  const [model,setModel]=useState<Model>(()=>(localStorage.getItem('homeflow_model') as Model) || 'gpt-5.6-luna');
+  const [voiceLang,setVoiceLang]=useState(()=>localStorage.getItem('homeflow_voice_lang') || 'en-ZA');
+  const [autoSpeak,setAutoSpeak]=useState(()=>localStorage.getItem('homeflow_auto_speak') !== 'false');
+  const [connection,setConnection]=useState<'untested'|'testing'|'ok'|'error'>('untested');
+  const [connectionMessage,setConnectionMessage]=useState('');
+  const [provider,setProvider]=useState('rules');
 
   useEffect(()=>{ Promise.all([fetchJson(`${API}/api/projects`),fetchJson(`${API}/api/dashboard`)]).then(([p,d])=>{setProjects(p);setDashboard(d);setSelected(p[0]??null);}).catch(()=>{}); },[]);
   useEffect(()=>{ if(['contractors','risks','recovery','audit'].includes(view)){ setViewLoading(true); fetchJson(`${API}/api/${view==='recovery'?'recovery':view}`).then(setViewData).catch(()=>setViewData([])).finally(()=>setViewLoading(false)); } },[view]);
   const filtered=useMemo(()=>projects.filter(p=>`${p.id} ${p.name} ${p.province} ${p.municipality} ${p.contractor}`.toLowerCase().includes(query.toLowerCase())),[projects,query]);
 
-  async function ask(text:string){ setBusy(true); setPanel(true); setAnswer('Analysing current project data…');
-    try { const d=await fetchJson(`${API}/api/ai/copilot`).catch(()=>null); if(d){/* GET is intentionally unsupported; fall through */}
-      const r=await fetch(`${API}/api/ai/copilot`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:text,projectId:selected?.id})}); const body=await r.json(); setAnswer(body.answer || 'No grounded answer available.'); }
-    catch { setAnswer('The HomeFlow API is unavailable. Check the service and try again.'); } finally { setBusy(false); }
+  function setKey(value:string){ setApiKey(value); if(value) sessionStorage.setItem('homeflow_openai_key',value); else sessionStorage.removeItem('homeflow_openai_key'); setConnection('untested'); }
+  function setPreferredModel(value:Model){ setModel(value); localStorage.setItem('homeflow_model',value); setConnection('untested'); }
+  function setPreferredVoice(value:string){ setVoiceLang(value); localStorage.setItem('homeflow_voice_lang',value); }
+  function setAutoVoice(value:boolean){ setAutoSpeak(value); localStorage.setItem('homeflow_auto_speak',String(value)); if(!value && 'speechSynthesis' in window) speechSynthesis.cancel(); }
+
+  function speakText(text:string){
+    if(!('speechSynthesis' in window) || !text) return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text.replace(/[*#`]/g,''));
+    u.lang=voiceLang; u.rate=.97; u.pitch=1;
+    const voices=speechSynthesis.getVoices();
+    const exact=voices.find(v=>v.lang.toLowerCase()===voiceLang.toLowerCase());
+    const base=voices.find(v=>v.lang.toLowerCase().startsWith(voiceLang.split('-')[0].toLowerCase()));
+    if(exact||base) u.voice=exact||base||null;
+    speechSynthesis.speak(u);
   }
+
+  async function ask(text:string, speakAfter=false){
+    setBusy(true); setPanel(true); setAnswer('Analysing current project data…');
+    try {
+      const headers:Record<string,string>={'Content-Type':'application/json'};
+      if(apiKey) headers['x-openai-api-key']=apiKey;
+      const r=await fetch(`${API}/api/ai/copilot`,{method:'POST',headers,body:JSON.stringify({question:text,projectId:selected?.id,model})});
+      const body=await r.json();
+      const next=body.answer || body.error || 'No grounded answer available.';
+      setAnswer(next); setProvider(body.provider || 'rules');
+      if((speakAfter||autoSpeak) && r.ok) setTimeout(()=>speakText(next),80);
+    } catch {
+      const next='The HomeFlow API is unavailable. Check the deployed service and try again.';
+      setAnswer(next); setProvider('offline'); if(speakAfter||autoSpeak) speakText(next);
+    } finally { setBusy(false); }
+  }
+
+  async function loadBrief(speakAfter=false){
+    try{
+      const b=await fetchJson(`${API}/api/executive-brief`); setBrief(b);
+      if(speakAfter){setPanel(true);setAnswer(b.summary);speakText(b.summary);}
+    }catch{setBrief({summary:'Executive brief service unavailable.',priorities:[]});}
+  }
+  async function loadChanges(){ if(!selected)return; try{setChanged(await fetchJson(`${API}/api/what-changed/${selected.id}`));}catch{setChanged({changes:['Change analysis is unavailable.']});} }
+
+  function voiceCommandHelp(){
+    const text='Try: open projects, show delivery map, open risks, show contractors, open finance, show recovery plans, open audit, select project HF-102, executive brief, what requires attention today, or stop speaking.';
+    setPanel(true); setAnswer(text); speakText(text);
+  }
+
+  async function handleCommand(text:string, fromVoice=false){
+    const t=text.trim(); const q=t.toLowerCase();
+    const navMap:Array<[RegExp,View,string]>=[
+      [/^(open|show|go to) (the )?(command centre|dashboard|home)$/i,'command','Opening the Command Centre.'],
+      [/^(open|show|go to) (the )?projects?$/i,'projects','Opening Projects.'],
+      [/^(open|show|go to) (the )?(delivery )?map$/i,'map','Opening the Delivery Map.'],
+      [/^(open|show|go to) (the )?contractors?$/i,'contractors','Opening Contractor Performance.'],
+      [/^(open|show|go to) (the )?finance$/i,'finance','Opening Finance.'],
+      [/^(open|show|go to) (the )?(risks|risks and blockers|blockers)$/i,'risks','Opening Risks and Blockers.'],
+      [/^(open|show|go to) (the )?(recovery|recovery plans?)$/i,'recovery','Opening Recovery Plans.'],
+      [/^(open|show|go to) (the )?(audit|audit and governance|governance)$/i,'audit','Opening Audit and Governance.']
+    ];
+    for(const [re,next,msg] of navMap){ if(re.test(t)){ setView(next); setPanel(true); setAnswer(msg); if(fromVoice||autoSpeak) speakText(msg); return; } }
+    const projectMatch=t.match(/(?:open|show|select|go to)\s+(?:project\s+)?(HF-\d+)/i);
+    if(projectMatch){ const p=projects.find(x=>x.id.toLowerCase()===projectMatch[1].toLowerCase()); if(p){setSelected(p);setView('projects');const msg=`Opening ${p.id}, ${p.name}.`;setPanel(true);setAnswer(msg);if(fromVoice||autoSpeak)speakText(msg);return;} }
+    if(/^(executive brief|read executive brief|generate executive brief)$/i.test(t)){await loadBrief(fromVoice||autoSpeak);return;}
+    if(/^(voice help|help with voice commands|what can i say|show voice commands)$/i.test(t)){voiceCommandHelp();return;}
+    if(/^(stop speaking|stop voice|be quiet)$/i.test(t)){if('speechSynthesis' in window)speechSynthesis.cancel();setAnswer('Voice playback stopped.');setPanel(true);return;}
+    if(q.startsWith('settings')||q==='openai settings'||q==='open settings'){setSettingsOpen(true);setPanel(true);setAnswer('Opening AI and voice settings.');return;}
+    await ask(t,fromVoice);
+  }
+
   function startVoice(){
     const SR=(window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if(!SR){ setPanel(true); setAnswer('Voice recognition is not available in this browser. Use text input or connect Azure AI Speech.'); return; }
-    const r=new SR(); recognitionRef.current=r; r.lang='en-ZA'; r.interimResults=false; r.continuous=false;
-    r.onstart=()=>setListening(true); r.onend=()=>setListening(false); r.onerror=()=>setListening(false);
-    r.onresult=(e:any)=>{ const text=e.results[0][0].transcript; ask(text); };
+    if(!SR){ setPanel(true); setAnswer('Voice recognition is not available in this browser. Chrome or Edge usually provide the broadest Web Speech support.'); return; }
+    if('speechSynthesis' in window) speechSynthesis.cancel();
+    const r=new SR(); recognitionRef.current=r; r.lang=voiceLang; r.interimResults=false; r.continuous=false;
+    r.onstart=()=>{setListening(true);setPanel(true);setAnswer('Listening…');}; r.onend=()=>setListening(false); r.onerror=()=>{setListening(false);setAnswer('I could not capture that voice command. Please try again.');};
+    r.onresult=(e:any)=>{ const text=e.results[0][0].transcript; setAnswer(`You said: “${text}”`); handleCommand(text,true); };
     r.start();
   }
-  function speak(){ if(!('speechSynthesis' in window)) return; speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(answer); u.lang='en-ZA'; u.rate=.98; speechSynthesis.speak(u); }
-  async function loadBrief(){ try{setBrief(await fetchJson(`${API}/api/executive-brief`));}catch{setBrief({summary:'Executive brief service unavailable.',priorities:[]});} }
-  async function loadChanges(){ if(!selected)return; try{setChanged(await fetchJson(`${API}/api/what-changed/${selected.id}`));}catch{setChanged({changes:['Change analysis is unavailable.']});} }
+
+  async function testOpenAI(){
+    if(!apiKey){setConnection('error');setConnectionMessage('Enter an OpenAI API key first.');return;}
+    setConnection('testing'); setConnectionMessage('Testing connection…');
+    try{
+      const r=await fetch(`${API}/api/openai/test`,{method:'POST',headers:{'Content-Type':'application/json','x-openai-api-key':apiKey},body:JSON.stringify({model})});
+      const body=await r.json();
+      if(!r.ok) throw new Error(body.error||'Connection failed');
+      setConnection('ok');setConnectionMessage(body.message||'Connection successful.');
+    }catch(e:any){setConnection('error');setConnectionMessage(e?.message||'Connection failed.');}
+  }
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">HF</div><div><b>HomeFlow AI</b><span>by Pyrneo</span></div></div>
       <nav>{navItems.map(([id,label,Icon])=><button key={id} className={view===id?'active':''} onClick={()=>setView(id)}><Icon/>{label}</button>)}</nav>
+      <button className="settings-nav" onClick={()=>setSettingsOpen(true)}><Settings size={17}/> AI & Voice Settings</button>
       <div className="sidebar-note"><Sparkles size={16}/><div><b>Responsible AI</b><span>Recommendations require accountable human review.</span></div></div>
     </aside>
     <main className="main">
-      <header><div><p className="eyebrow">{view==='command'?'HOMEFLOW COMMAND CENTRE':view.toUpperCase()}</p><h1>{view==='command'?'Human Settlements Delivery Assurance':navItems.find(n=>n[0]===view)?.[1]}</h1></div><div className="header-actions"><button className="ghost" onClick={loadBrief}><Sparkles size={17}/> Executive brief</button><button className={`voice ${listening?'live':''}`} onClick={startVoice}><Mic size={18}/>{listening?'Listening…':'Ask HomeFlow'}</button></div></header>
+      <header><div><p className="eyebrow">{view==='command'?'HOMEFLOW COMMAND CENTRE':view.toUpperCase()}</p><h1>{view==='command'?'Human Settlements Delivery Assurance':navItems.find(n=>n[0]===view)?.[1]}</h1></div><div className="header-actions"><button className="ghost" onClick={()=>setSettingsOpen(true)}><KeyRound size={17}/> OpenAI</button><button className="ghost" onClick={()=>loadBrief(false)}><Sparkles size={17}/> Executive brief</button><button className={`voice ${listening?'live':''}`} onClick={startVoice}><Mic size={18}/>{listening?'Listening…':'Voice Agent'}</button></div></header>
 
-      {view==='command' && <CommandCentre dashboard={dashboard} projects={filtered} selected={selected} setSelected={setSelected} query={query} setQuery={setQuery} ask={ask} loadChanges={loadChanges}/>} 
-      {view==='projects' && <ProjectsView projects={filtered} selected={selected} setSelected={setSelected} query={query} setQuery={setQuery} ask={ask}/>} 
+      {view==='command' && <CommandCentre dashboard={dashboard} projects={filtered} selected={selected} setSelected={setSelected} query={query} setQuery={setQuery} ask={(q:string)=>handleCommand(q,false)} loadChanges={loadChanges}/>} 
+      {view==='projects' && <ProjectsView projects={filtered} selected={selected} setSelected={setSelected} query={query} setQuery={setQuery} ask={(q:string)=>handleCommand(q,false)}/>} 
       {view==='map' && <MapView projects={projects} setSelected={(p)=>{setSelected(p);setView('projects')}}/>}
       {view==='finance' && <FinanceView projects={projects}/>} 
       {['contractors','risks','recovery','audit'].includes(view) && <DataView type={view} data={viewData} loading={viewLoading}/>} 
@@ -73,7 +159,18 @@ function App(){
       {changed && <section className="brief card"><div className="card-head"><div><h2>What Changed? · {selected?.id}</h2><p>Current demo snapshot analysis.</p></div><button className="icon-btn" onClick={()=>setChanged(null)}><X/></button></div><div className="change-list">{(changed.changes||[]).map((x:string,i:number)=><div key={i}><RefreshCw size={15}/><span>{x}</span></div>)}</div></section>}
       <footer><span>HomeFlow AI by Pyrneo</span><span>From stalled projects to completed homes.</span><span>Demo data · Not a production government system</span></footer>
     </main>
-    {panel && <aside className="copilot"><div className="copilot-head"><div><Sparkles/><div><b>HomeFlow Copilot</b><span>{selected?`Context: ${selected.id}`:'Portfolio context'}</span></div></div><button onClick={()=>setPanel(false)}><X/></button></div><div className="chat"><div className="assistant-bubble">{busy?<span className="typing">•••</span>:answer}</div><div className="grounding"><ShieldCheck size={15}/> Grounded in current demo project records. AI recommendations require human review.</div></div><div className="quick-prompts"><button onClick={()=>ask('Which projects require my attention today?')}>Priorities</button><button onClick={()=>ask('Which projects are potentially stalled?')}>Stalled</button><button onClick={()=>ask('Which project has the largest budget gap?')}>Budget gap</button></div><div className="chat-actions"><button onClick={speak}><Volume2 size={17}/>Speak</button><button onClick={startVoice}><Mic size={17}/>Voice</button></div><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const t=String(f.get('q')||''); if(t) ask(t); e.currentTarget.reset();}}><input name="q" placeholder="Ask about risk, progress, contractors…"/><button>Ask</button></form></aside>}
+
+    {panel && <aside className="copilot"><div className="copilot-head"><div><Bot/><div><b>HomeFlow Voice Copilot</b><span>{selected?`Context: ${selected.id}`:'Portfolio context'} · {provider==='openai'?model:'grounded fallback'}</span></div></div><button onClick={()=>setPanel(false)}><X/></button></div><div className="chat"><div className="assistant-bubble">{busy?<span className="typing">•••</span>:answer}</div><div className="grounding"><ShieldCheck size={15}/> Grounded in current HomeFlow demo records. Human review remains required.</div></div><div className="quick-prompts"><button onClick={()=>handleCommand('Which projects require my attention today?')}>Priorities</button><button onClick={()=>handleCommand('Which projects are potentially stalled?')}>Stalled</button><button onClick={()=>handleCommand('Which project has the largest budget gap?')}>Budget gap</button><button onClick={voiceCommandHelp}>Voice help</button></div><div className="chat-actions"><button onClick={()=>speakText(answer)}><Volume2 size={17}/>Speak</button><button onClick={startVoice}><Mic size={17}/>Voice</button><button onClick={()=>setAutoVoice(!autoSpeak)}>{autoSpeak?<Volume2 size={17}/>:<VolumeX size={17}/>}Auto {autoSpeak?'on':'off'}</button></div><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const t=String(f.get('q')||''); if(t) handleCommand(t,false); e.currentTarget.reset();}}><input name="q" placeholder="Ask or type a command…"/><button>Ask</button></form></aside>}
+
+    {settingsOpen && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><section className="settings-modal card"><div className="card-head"><div><h2>AI & Voice Settings</h2><p>Configure the hackathon copilot without hard-coding credentials.</p></div><button className="icon-btn" onClick={()=>setSettingsOpen(false)}><X/></button></div><div className="settings-body">
+      <label>OpenAI API key <span>stored only in this browser tab session</span></label><div className="key-row"><input type="password" autoComplete="off" placeholder="sk-…" value={apiKey} onChange={e=>setKey(e.target.value)}/><button onClick={testOpenAI} disabled={connection==='testing'}>{connection==='testing'?'Testing…':'Test API'}</button></div>
+      <div className={`connection-state ${connection}`}>{connectionMessage || 'Optional: without a key, HomeFlow uses its deterministic grounded demo assistant. For production, configure OPENAI_API_KEY as a server-side secret or Azure Key Vault secret.'}</div>
+      <div className="settings-grid"><div><label>OpenAI model</label><select value={model} onChange={e=>setPreferredModel(e.target.value as Model)}><option value="gpt-5.6-luna">GPT-5.6 Luna — cost-sensitive</option><option value="gpt-5.6-terra">GPT-5.6 Terra — balanced</option><option value="gpt-5.6-sol">GPT-5.6 Sol — highest capability</option></select></div><div><label>Voice language</label><select value={voiceLang} onChange={e=>setPreferredVoice(e.target.value)}>{voiceLanguages.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></div></div>
+      <label className="toggle-row"><input type="checkbox" checked={autoSpeak} onChange={e=>setAutoVoice(e.target.checked)}/><span>Automatically speak agent responses</span></label>
+      <div className="voice-command-box"><b>Voice commands</b><p>“Open projects” · “Show delivery map” · “Open risks” · “Show contractors” · “Open finance” · “Show recovery plans” · “Open audit” · “Select project HF-102” · “Executive brief” · “What requires attention today?” · “Stop speaking”</p></div>
+      <div className="security-note"><ShieldCheck size={18}/><div><b>Credential handling</b><span>The API key is not written to the repository, database or localStorage. This demo keeps it in sessionStorage and sends it only to the HomeFlow backend for OpenAI calls. Production deployments should keep provider credentials server-side.</span></div></div>
+      <div className="settings-actions"><button className="ghost" onClick={()=>setKey('')}>Clear API key</button><button className="voice" onClick={()=>setSettingsOpen(false)}>Done</button></div>
+    </div></section></div>}
   </div>
 }
 
