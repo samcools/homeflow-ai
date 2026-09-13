@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { projects, auditLog } from './data.js';
 import { executiveBrief, groundedAnswer, projectDrivers } from './insights.js';
@@ -105,7 +106,7 @@ async function callOpenAI(opts: { key: string; model: string; question: string; 
   }
 }
 
-app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.4.0', openAIConfigured: Boolean(process.env.OPENAI_API_KEY) }));
+app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.4.1', openAIConfigured: Boolean(process.env.OPENAI_API_KEY) }));
 app.get('/api/projects', (req,res) => {
   const status = String(req.query.status || '');
   const province = String(req.query.province || '');
@@ -255,13 +256,24 @@ app.post('/api/actions', (req,res) => {
 });
 
 // Serve the built React application from the same origin in deployed environments.
-const webDist = path.resolve(process.cwd(), 'apps/web/dist');
-if (existsSync(webDist)) {
-  app.use(express.static(webDist, { maxAge: '1h' }));
-  app.use((req,res,next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.sendFile(path.join(webDist, 'index.html'));
-    next();
+// npm workspaces execute the API start script with apps/api as process.cwd(), so resolve from the compiled module first.
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const webDistCandidates = [
+  path.resolve(moduleDir, '../../web/dist'),
+  path.resolve(process.cwd(), 'apps/web/dist'),
+  path.resolve(process.cwd(), '../web/dist')
+];
+const webDist = webDistCandidates.find(candidate => existsSync(candidate));
+
+if (webDist) {
+  console.log(`Serving HomeFlow web app from ${webDist}`);
+  app.use(express.static(webDist, { maxAge: '1h', index: 'index.html' }));
+  app.get('*', (req,res,next) => {
+    if (req.path.startsWith('/api/')) return next();
+    return res.sendFile(path.join(webDist, 'index.html'));
   });
+} else {
+  console.warn(`HomeFlow web build not found. Checked: ${webDistCandidates.join(', ')}`);
 }
 
 app.use((_req,res) => res.status(404).json({ error: 'Not found' }));
