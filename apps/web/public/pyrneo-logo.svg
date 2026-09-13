@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-label="Pyrneo logo">
+  <g fill="none" stroke="#fff" stroke-width="30" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M30 220V40h130c48 0 78 25 78 65s-30 65-78 65H30M30 105h130"/>
+    <path d="M400 220V40h125c50 0 80 24 80 63s-30 63-80 63H400M510 166l92 54"/>
+    <path d="M680 220V40l150 180V40"/>
+    <path d="M900 40h160M900 130h130M900 220h160M900 40v180"/>
+    <rect x="1090" y="40" width="80" height="180" rx="18"/>
+  </g>
+  <g fill="none" stroke-width="30" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M285 40l55 70" stroke="#55e829"/>
+    <path d="M395 40l-55 70" stroke="#2948ff"/>
+    <path d="M340 110v110" stroke="#ff1e2d"/>
+  </g>
+</svg>
