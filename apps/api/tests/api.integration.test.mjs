@@ -34,7 +34,7 @@ async function get(path, token) {
   return {r, body};
 }
 
-test('HomeFlow authenticated API, RBAC, recovery and copilot workflows', async (t) => {
+test('HomeFlow authenticated API, RBAC, risks, recovery and copilot workflows', async (t) => {
   const child = spawn(process.execPath, ['dist/server.js'], {
     cwd: process.cwd(),
     env: {...process.env, PORT:String(port), OPENAI_API_KEY:''},
@@ -61,6 +61,12 @@ test('HomeFlow authenticated API, RBAC, recovery and copilot workflows', async (
   assert.ok(gauteng.body.projects.length > 0);
   assert.ok(gauteng.body.projects.every(p => p.province === 'Gauteng'));
 
+  const risks = await get('/api/risks', admin.token);
+  assert.equal(risks.r.status, 200);
+  assert.ok(Array.isArray(risks.body));
+  assert.ok(risks.body.length > 0);
+  assert.ok(risks.body.every(r => r.projectName && r.openRisks > 0 && r.primaryBlocker));
+
   const recovery = await get('/api/recovery', admin.token);
   assert.equal(recovery.r.status, 200);
   assert.ok(recovery.body.length > 0);
@@ -85,6 +91,10 @@ test('HomeFlow authenticated API, RBAC, recovery and copilot workflows', async (
   assert.equal(managerProjects.r.status, 200);
   assert.ok(managerProjects.body.length > 0);
   assert.ok(managerProjects.body.every(p => p.province === 'Gauteng'));
+
+  const managerRisks = await get('/api/risks', manager.token);
+  assert.equal(managerRisks.r.status, 200);
+  assert.ok(managerRisks.body.every(r => r.province === 'Gauteng'));
 
   const contractor = await login('contractor@homeflow.ai');
   const contractorProjects = await get('/api/projects', contractor.token);
