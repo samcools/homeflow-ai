@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-label="HomeFlow AI">
+  <rect width="760" height="220" fill="none"/>
+  <g transform="translate(25,20)">
+    <path d="M30 82 L105 18 L180 82 V160 H30 Z" fill="none" stroke="#ffffff" stroke-width="15" stroke-linejoin="round"/>
+    <rect x="86" y="74" width="38" height="38" rx="4" fill="#ffffff"/>
+    <path d="M112 126 H205" stroke="#55e66b" stroke-width="12" stroke-linecap="round"/>
+    <path d="M160 126 H235" stroke="#2f9fff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M188 126 V160 H230" stroke="#ff4f5c" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="205" cy="126" r="10" fill="#55e66b"/><circle cx="235" cy="126" r="10" fill="#2f9fff"/><circle cx="230" cy="160" r="10" fill="#ff4f5c"/>
+  </g>
+  <text x="285" y="105" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="66" fill="#ffffff">HomeFlow</text>
+  <text x="628" y="105" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="66" fill="#55e66b">A</text>
+  <text x="675" y="105" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="66" fill="#ff4f5c">I</text>
+  <text x="289" y="146" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#9aa8ba" letter-spacing="5">HOMES   DATA   IMPACT</text>
+</svg>
