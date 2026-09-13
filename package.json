@@ -6,7 +6,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "concurrently \"npm:dev -w apps/api\" \"npm:dev -w apps/web\"",
-    "build": "node scripts/fetch-pyrneo-logo.mjs && npm run build -w apps/web && npm run build -w apps/api",
+    "build": "node scripts/fetch-pyrneo-logo.mjs && npm run build -w apps/web && npm run build -w apps/api && node scripts/patch-api-runtime.mjs",
     "typecheck": "npm run typecheck -w apps/web && npm run build -w apps/api",
     "qa": "node scripts/qa-static.mjs",
     "test": "npm run test -w apps/api && npm run qa",
