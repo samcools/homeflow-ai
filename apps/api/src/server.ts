@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { projects, auditLog } from './data.js';
 import { executiveBrief, groundedAnswer, projectDrivers } from './insights.js';
@@ -15,7 +17,7 @@ app.use(express.json({ limit: '2mb' }));
 const spendPct = (p: (typeof projects)[number]) => Math.round(p.expenditure / p.budget * 100);
 const divergence = (p: (typeof projects)[number]) => spendPct(p) - p.physicalProgress;
 
-app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.2.0' }));
+app.get('/api/health', (_req,res) => res.json({ ok: true, service: 'homeflow-api', version: '0.3.0' }));
 app.get('/api/projects', (req,res) => {
   const status = String(req.query.status || '');
   const province = String(req.query.province || '');
@@ -122,6 +124,16 @@ app.post('/api/actions', (req,res) => {
   if (!parsed.data.confirmed) return res.status(409).json({ confirmationRequired: true, message: `Confirm ${parsed.data.action} for ${parsed.data.projectId}.` });
   res.json({ ok: true, demo: true, action: parsed.data.action, projectId: parsed.data.projectId, message: 'Demo action recorded. Connect an authenticated production datastore and workflow engine before operational use.' });
 });
+
+// Serve the built React application from the same origin in deployed environments.
+const webDist = path.resolve(process.cwd(), 'apps/web/dist');
+if (existsSync(webDist)) {
+  app.use(express.static(webDist, { maxAge: '1h' }));
+  app.use((req,res,next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.sendFile(path.join(webDist, 'index.html'));
+    next();
+  });
+}
 
 app.use((_req,res) => res.status(404).json({ error: 'Not found' }));
 app.listen(port, () => console.log(`HomeFlow API listening on ${port}`));
