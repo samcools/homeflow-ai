@@ -1,0 +1,14 @@
+{
+  "name": "homeflow-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "HomeFlow AI by Pyrneo — AI-powered delivery assurance for Human Settlements",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently \"npm:dev -w apps/api\" \"npm:dev -w apps/web\"",
+    "build": "npm run build -w apps/web && npm run build -w apps/api",
+    "test": "npm run test -w apps/api",
+    "start": "npm run start -w apps/api"
+  },
+  "devDependencies": {"concurrently": "^9.0.0"}
+}
