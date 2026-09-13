@@ -12,7 +12,7 @@ assert.match(index, /src\/portal-v5\.tsx/, 'Current HomeFlow portal entrypoint m
 
 for (const feature of [
   'CommandCentre','ProjectsView','MapView','ContractorsView','FinanceView','RisksView','RecoveryView','AuditView','UsageView',
-  'Download report','Voice Agent','Executive brief','api/ai/copilot','api/recovery'
+  'Download report','Voice Agent','Executive brief','api/ai/copilot',"view==='recovery'"
 ]) {
   assert.ok(portal.includes(feature), `Missing required portal feature: ${feature}`);
 }
