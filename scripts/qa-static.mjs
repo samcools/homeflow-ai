@@ -3,37 +3,31 @@ import assert from 'node:assert/strict';
 
 const read = p => fs.readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const index = read('apps/web/index.html');
-const portal = read('apps/web/src/portal-v5.tsx');
-const views = read('apps/web/src/views.css');
-const portalCss = read('apps/web/src/portal-v5.css');
-const enhancements = read('apps/web/src/enhancements.ts');
-const enhancementsCss = read('apps/web/src/enhancements.css');
+const portal = read('apps/web/src/portal-stable.tsx');
+const css = read('apps/web/src/portal-stable.css');
 
-assert.match(index, /src\/views\.css/, 'Professional shared view stylesheet must be loaded');
-assert.match(index, /src\/portal-v5\.tsx/, 'Current HomeFlow portal entrypoint must be active');
-assert.match(index, /src\/enhancements\.ts/, 'Reporting and risk enhancements must be active');
+assert.match(index, /src\/portal-stable\.tsx/, 'Stable HomeFlow portal entrypoint must be active');
+assert.ok(!index.includes('enhancements.ts'), 'Legacy DOM enhancement script must not be loaded');
+assert.ok(!index.includes('smart-enhancements.ts'), 'Legacy smart DOM mutation script must not be loaded');
+assert.ok(!index.includes('risk-page-fix.ts'), 'Legacy risk-page mutation script must not be loaded');
 
 for (const feature of [
-  'CommandCentre','ProjectsView','MapView','ContractorsView','FinanceView','RisksView','RecoveryView','AuditView','UsageView',
-  'Download report','Voice Agent','Executive brief','api/ai/copilot',"view==='recovery'"
-]) {
-  assert.ok(portal.includes(feature), `Missing required portal feature: ${feature}`);
+  'CommandCentre','Projects','MapView','Contractors','Finance','Risks','Recovery','Audit','Usage',
+  'Voice Agent','Ask HomeFlow','api/ai/copilot','api/risks','api/notifications/report','exportExcel','exportPdf',
+  'Gantt','South Africa Delivery Map','AI & Voice Settings','gpt-5.6-luna'
+]) assert.ok(portal.includes(feature), `Missing stable portal feature: ${feature}`);
+
+for (const cls of ['.metrics','.metric strong','.gantt','.risk-grid','.risk-card','.sa-map','.copilot','.settings-panel','.login-page','.detail','.table']) {
+  assert.ok(css.includes(cls), `Missing stable professional style: ${cls}`);
 }
 
-for (const feature of ['exportExcel','exportPdf','/api/risks','ensureRiskFallback','makeXlsx']) {
-  assert.ok(enhancements.includes(feature), `Missing enhancement feature: ${feature}`);
-}
+assert.match(css,/\.metric strong\{display:block;color:#fff!important/, 'Dashboard quantities must render white');
+assert.ok(portal.includes("user.role==='Administrator'"), 'Administrator settings gate must remain');
+assert.ok(portal.includes('onClick={()=>navigate(\'command\')}'), 'Pyrneo brand must navigate home');
+assert.ok(!/Powered by Pyrneo/i.test(portal), 'Powered by Pyrneo wording must not appear');
+assert.ok(portal.includes("fetchJson('/api/ai/copilot'"), 'Conversational copilot endpoint must be connected');
+assert.ok(portal.includes("fetchJson('/api/notifications/report'"), 'Email report endpoint must be connected');
+assert.ok(portal.includes("fetchJson('/api/projects'"), 'Projects must load from the API');
+assert.ok(portal.includes("view==='risks'"), 'Risks page route must be rendered directly by React');
 
-for (const cls of ['.data-table','.table-row','.data-cards','.data-card','.login-page','.map-layout','.copilot','.drawer-backdrop']) {
-  assert.ok(views.includes(cls), `Missing shared professional style: ${cls}`);
-}
-
-for (const cls of ['.inline-detail','.recovery-row','.sa-map-v5','.brief-card','.metric-btn']) {
-  assert.ok(portalCss.includes(cls), `Missing HomeFlow v5 style: ${cls}`);
-}
-
-assert.match(enhancementsCss,/\.metric strong\{color:#fff!important/, 'KPI quantities must render white');
-assert.ok(portal.includes("user.role==='Administrator'"), 'OpenAI settings must remain administrator-gated');
-assert.ok(!/Powered by Pyrneo/i.test(portal), 'Powered by Pyrneo wording must not appear in portal UI');
-
-console.log('HomeFlow static QA checks passed.');
+console.log('HomeFlow stable portal static QA checks passed.');
